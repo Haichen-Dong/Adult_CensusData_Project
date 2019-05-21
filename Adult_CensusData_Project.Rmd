@@ -1,0 +1,238 @@
+---
+title: "Predict whether income exceeds $50K/yr based on census data"
+author: "Haichen Dong"
+date: "5/16/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r message=FALSE, warning==FALSE,echo=FALSE}
+#All the Libraries needed.
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+require(gridExtra)
+library(tidyverse)
+library(caret)
+library(Rborist)
+library(MASS)
+library(naivebayes)
+```
+
+## Project Overview
+
+In this project, I will apply machine learning techniques to predict whether income exceeds $50K/yr based on census data. In the initial stage, we would like explore the data by using some statistic methods and graphics. After understanding the data, data cleaning and feature selection will be applied in data file for future data analysis. In this process, data records with missing field will be removed, and some features do not fit in our analysis models also be removed. Data will be randomly separated to two parts, 80 percent data for training and 20 percent for testing. Finally we can implementing some machine leaning models to predict the income, checking whether income exceeds $50K/yr. Base on the accuracies of all the models, we can pick best model for this predicting.
+
+## Project Data
+###  1. Data Collection
+This data was extracted from the 1994 Census bureau database by Ronny Kohavi and Barry Becker. A set of reasonably clean records was extracted using the following conditions: ((AAGE>16) && (AGI>100) && (AFNLWGT>1) && (HRSWK>0)). Data can be downloaded from: https://www.kaggle.com/uciml/adult-census-income/downloads/adult-census-income.zip/3
+
+###  2. Data Attributes:
+**income**: >50K, <=50K
+
+**age**: continuous
+
+**workclass**: Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked
+
+**fnlwgt**: continuous
+
+**education**: Bachelors, Some-college, 11th, HS-grad, Prof-school, Assoc-acdm, Assoc-voc, 9th, 7th-8th, 12th, Masters, 1st-4th, 10th, Doctorate, 5th-6th, Preschool
+
+**education-num**: continuous
+
+**marital-status**: Married-civ-spouse, Divorced, Never-married, Separated, Widowed, Married-spouse-absent, Married-AF-spouse
+
+**occupation**: Tech-support, Craft-repair, Other-service, Sales, Exec-managerial, Prof-specialty, Handlers-cleaners, Machine-op-inspct, Adm-clerical, Farming-fishing, Transport-moving, Priv-house-serv, Protective-serv, Armed-Forces
+
+**relationship**: Wife, Own-child, Husband, Not-in-family, Other-relative, Unmarried
+
+**race**: White, Asian-Pac-Islander, Amer-Indian-Eskimo, Other, Black
+
+**sex**: Female, Male
+
+**capital-gain**: continuous
+
+**capital-loss**: continuous
+
+**hours-per-week**: continuous
+
+**native-country**: United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands
+
+##  Prepare Data:
+###  1. Feature Selection and Data Clean:
+Some features in this dataset are not fit my analysis model.
+
+  +   "capital.gain", too many zeros (see Figure 1).
+  
+  +   "capital.loss", too many zeros (see Figure 2).
+  
+  +   "native.country", most values are U.S. (see Figure 3).
+  
+  +   "education-num", same feature with "education".
+  
+  +   "fnlwgt", too many unique values and no significant different between >50K and <=50K (see Figure 4).
+
+All the data with missing value(s) has been removed to clean data and improve the result.
+```{r RawData,echo=FALSE}
+
+DownloadFile="U:/projects/FinalPro/adult.csv"
+dat = read.csv(DownloadFile, header = TRUE)
+par(mfrow=c(1,2))
+hist(dat$capital.gain ,xlab= "capital.gain",col = "yellow",border = "blue",main="Figure 1",cex.lab=.5, cex.axis=.5, cex.main=.8, cex.sub=.5)
+hist(dat$capital.loss ,xlab= "capital.loss",col = "yellow",border = "blue",main="Figure 2",cex.lab=.5, cex.axis=.5, cex.main=.8, cex.sub=.5)
+ggplot(dat, aes(x=native.country)) + geom_bar(colour = "red")+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+ggtitle("Figure 3")
+plot(dat$income,dat$fnlwgt,main="Figure 4")
+```
+
+###  2. Data Summary:
+There are 30,718 records and 9 features in this dataset. The "income" is the field we will predict. There are about 25% data with >50K and 75% data with <=50K. There are two continuous featrues: age and hours.per.week; and seven categorical features.
+```{r data, echo=FALSE}
+destfile="U:/projects/FinalPro/AdultClean.RData"
+load(destfile)
+# data dim
+dim(dat_clean)
+# income percent
+prop.table(table(dat_clean$income))
+summary(dat_clean)
+```
+###  3. Check Feature Data :
+From the following graphics, we can see the feature data are different in >50K and <=50K.
+```{r featuredata, echo=FALSE}
+par(mfrow=c(1,2))
+p1<-plot(dat_clean$income,dat_clean$age,main="Age")
+p2<-plot(dat_clean$income,dat_clean$hours.per.week,main="HourPerWeek")
+
+
+g1<-ggplot(dat_clean, aes(x=workclass,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g2<-ggplot(dat_clean, aes(x=education,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g3<-ggplot(dat_clean, aes(x=marital.status,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g4<-ggplot(dat_clean, aes(x=occupation,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+grid.arrange(g1, g2, g3, g4, ncol=2)
+g5<-ggplot(dat_clean, aes(x=relationship ,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g6<-ggplot(dat_clean, aes(x=race,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g7<-ggplot(dat_clean, aes(x=sex,fill=income)) + geom_bar()+ 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+grid.arrange(g5, g6, g7, ncol=2)
+```
+
+###  4. Prepare Training/Testing Data
+
+Separate our data to training data and testing data. createDataPartition function has been used to randomly separate data, with 80 percent for training and 20 percent for testing. After separation, >50K and <=50K rates in both dataset are very same as the original dataset 25% vs 75%. There are 24574 records in traing dataset and 6144 records in testing dataset.
+
+```{r buildtesting/trainingdata, echo=FALSE}
+set.seed(1)
+#head(dat_clean,20)
+dat_clean$income <- ifelse(dat_clean$income == "<=50K", 0, 1)
+dat_clean$income <- as.factor(dat_clean$income)
+#head(dat_clean)
+test_index <- createDataPartition(y = dat_clean$income, times = 1, p = 0.2, list = FALSE)
+TrainData <- dat_clean[-test_index,]
+TestData <- dat_clean[test_index,]
+dim(TrainData)
+dim(TestData)
+prop.table(table(TrainData$income))
+prop.table(table(TestData$income))
+```
+
+##   Build Models
+###  1. Naive Bayes
+It is a classification technique based on Bayes’ Theorem with an assumption of independence among predictors. We also can group some data items for more simple and conclusive. 
+```{r Model1, echo=FALSE}
+# naive bayes
+fit_naive_bayes <- naive_bayes(income~., data=TrainData)
+y_hat_naive_bayes <- predict(fit_naive_bayes, TestData)
+cm <- confusionMatrix(y_hat_naive_bayes, TestData$income)
+Predit_Accuracy <- tibble(method = "Naive Bayes",  accuracy=cm$overall["Accuracy"])
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+###  2. Logistic Regression
+Logistic Regression is the go-to method for binary classification problems.It gets better accuracy then Naive Bayes in our dataset.
+```{r Model2, echo=FALSE}
+#Logistic Regression
+fit_glm <- glm(income ~., data=TrainData, family = "binomial")
+p_hat_glm <- predict(fit_glm, TestData)
+y_hat_glm <- factor(ifelse(p_hat_glm > 0.5, 1, 0))
+cm <-confusionMatrix(data = y_hat_glm, reference = TestData$income)
+Predit_Accuracy <- bind_rows(Predit_Accuracy,
+                             tibble(method="Logistic Regression",  
+                                    accuracy=cm$overall["Accuracy"]))
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+###  3. Stepwise Logistic Regression
+We use both direction in stepwise logistic regression to improve the accucracy from 0.81 to 0.82.
+```{r Model3, echo=FALSE}
+#Stepwise Logistic Regression 
+fit_step<-fit_glm %>%stepAIC(trace=FALSE,direction="both")
+#summary(fit_step)
+p_hat_step<- predict(fit_step, TestData,type = "response")
+y_hat_step<- factor(ifelse(p_hat_step > 0.5, 1, 0))
+cm <-confusionMatrix(data = y_hat_step, reference = TestData$income)
+Predit_Accuracy <- bind_rows(Predit_Accuracy,
+                             tibble(method="Stepwise Logistic Regression",  
+                                    accuracy=cm$overall["Accuracy"]))
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+###  4. Nearest Neighbor
+KNN has easily been the simplest to pick up. Despite it’s simplicity, it has proven to be incredibly effective at certain tasks. We have auto picked the K for best result. We found 7 is the optimal number for our dataset.
+```{r Model4, echo=FALSE}
+#k-Nearest Neighbor
+fit_knn <- knn3(income~., data=TrainData,  k = 7)
+y_hat_knn <- predict(fit_knn, TestData, type="class")
+cm <- confusionMatrix(y_hat_knn, TestData$income)
+Predit_Accuracy <- bind_rows(Predit_Accuracy,
+                             tibble(method="Nearest Neighbor",  
+                                    accuracy=cm$overall["Accuracy"]))
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+###  5. Random Forest 
+The last model that I would like to use is Random Forests. we have optimized our tree with minNode and predFixed parameters.
+```{r Model5, echo=FALSE}
+#Random Forest
+control <- trainControl(method="cv", number = 5, p = 0.8)
+grid <- expand.grid(minNode = c(1) , predFixed = c(2,3,4,5))
+train_rf <-  train(TrainData[,-10], TrainData$income, 
+                   method = "Rborist", 
+                   nTree = 50,
+                   trControl = control,
+                   tuneGrid = grid)
+train_rf$bestTune
+fit_rf <- Rborist(TrainData[,-10], TrainData$income, 
+                  nTree = 1000,
+                  minNode = train_rf$bestTune$minNode,
+                  predFixed = train_rf$bestTune$predFixed)
+y_hat_rf <-predict(fit_rf, TestData[,-10], type="class")
+cm <- confusionMatrix(y_hat_rf$yPred, TestData$income)
+Predit_Accuracy <- bind_rows(Predit_Accuracy,
+                             tibble(method="Random Forest",  
+                                    accuracy=cm$overall["Accuracy"]))
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+###  6. Ensembles
+After trying all those models, I would like improve the final result by combining the results of two different algorithms, Random Forest and Stepwise Logistic Regression. The result is little better than any of them.
+```{r Model6, echo=FALSE}
+#Ensembles
+p <- (as.numeric(y_hat_rf$yPred) + as.numeric(y_hat_step))/2
+y_pred <- as.factor(ifelse(p>=1.5,1,0))
+cm <- confusionMatrix(y_pred, TestData$income)
+Predit_Accuracy <- bind_rows(Predit_Accuracy,
+                             tibble(method="Ensembles",  
+                                    accuracy=cm$overall["Accuracy"]))
+as.table(c(cm$overall["Accuracy"],cm$byClass["Sensitivity"],cm$byClass["Specificity"]))
+```
+##   Conclusion
+In this project, I use five different models to predict data. Nine features have been used in all the models. From the simple model, Stepwise Logistic Regression wins the best model for predicting person's income exceeds $50K/y in this census data; Naïve Bayes has good balance in sensitivity and specificity; and Ensembles can improve the final results. For further work, I would like try group some data items to make data simple, like the age or education. Also try reducing some features.
+
+```{r ModelSum, echo=FALSE}
+Predit_Accuracy
+```
+Project File Link at GitHub : https://github.com/Haichen-Dong/Adult_CensusData_Project
